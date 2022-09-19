@@ -4,7 +4,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 
-/* Function Prototype */
+/* Function Prototype  */
 void doInitialize(void);
 
 /* 基本属性定義 */
