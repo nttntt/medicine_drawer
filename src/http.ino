@@ -25,12 +25,12 @@ const String strHtmlBody = R"rawliteral(
     <tr><td>Brightness</td><td><span class="value">%BRIGHTNESS%</span></td></tr>
     <tr><td>Sensitivity</td><td><span class="value">%SENSITIVITY%</span></td></tr>
     </table>
-    <input type="button" value="Mode" style="font-size:32px;" onclick="location.href='/?button=mode';"><br>
-    <input type="button" value="Reset" style="font-size:32px;" onclick="location.href='/?button=reset';"><br>
-    <input type="button" value="^" style="font-size:32px;" onclick="location.href='/?button=up';"><br>
-    <input type="button" value="<" style="font-size:32px;" onclick="location.href='/?button=left';">
-    <input type="button" value=">" style="font-size:32px;" onclick="location.href='/?button=right';"><br>
-    <input type="button" value="V" style="font-size:32px;" onclick="location.href='/?button=down';">
+    <input type="button" value="1" style="font-size:32px;" onclick="location.href='/?button=1';">
+    <input type="button" value="2" style="font-size:32px;" onclick="location.href='/?button=2';">
+    <input type="button" value="3" style="font-size:32px;" onclick="location.href='/?button=3';">
+    <input type="button" value="4" style="font-size:32px;" onclick="location.href='/?button=4';">
+    <input type="button" value="0" style="font-size:32px;" onclick="location.href='/?button=0';"><br>
+    
 <form action="/" method="get">
 <input type="text" name="valueR"><br><input type="text" name="valueG"><br><input type="text" name="valueB">
 <input type="submit" name="button" value="send">
@@ -44,7 +44,7 @@ void httpSendResponse(void)
   String strHtml = strHtmlHeader + strHtmlBody;
   char numStr[10];
   strHtml.replace("%PAGE_TITLE%", mDNS_NAME);
-  sprintf(numStr, "%d", 0);
+  sprintf(numStr, "%d", gGroup);
   strHtml.replace("%PATTERN%", numStr);
   sprintf(numStr, "%d", 0);
   strHtml.replace("%BRIGHTNESS%", numStr);
@@ -62,21 +62,26 @@ void handleHtml(void)
   if (server.hasArg("button"))
   {
     // パラメータに応じて、LEDを操作
-    if (server.arg("button").equals("mode"))
+    if (server.arg("button").equals("1"))
     {
-      gTestHue = 60;
+      gGroup = 1;
     }
-    else if (server.arg("button").equals("up"))
+    else if (server.arg("button").equals("2"))
     {
-      gTestHue = gTestHue + 60;
+      gGroup = 2;
     }
-    
-    else if (server.arg("button").equals("down"))
+    else if (server.arg("button").equals("3"))
     {
-      gTestHue = gTestHue - 60;
-   
+      gGroup = 3;
     }
-    
+    else if (server.arg("button").equals("4"))
+    {
+      gGroup = 4;
+    }
+    else if (server.arg("button").equals("0"))
+    {
+      gGroup = 0;
+    }
   }
   // ページ更新
   httpSendResponse();
@@ -132,7 +137,6 @@ void startMDNS()
     Serial.print(".");
     delay(100);
   }
-  Serial.println("success!");
 }
 
 void startWebServer()
