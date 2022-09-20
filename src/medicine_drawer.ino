@@ -58,6 +58,7 @@ uint8_t gChangeStatus = 0;
 uint8_t gStatus = 0;
 uint8_t gFlag = 0;
 time_t gPrevTime;    //  チャタリング対策
+time_t gNowTime;
 struct tm gTimeInfo; //時刻を格納するオブジェクト
 
 uint64_t gSchedule[4] = {10, 30, 10, 20};
@@ -75,6 +76,7 @@ void setup()
 
 void loop()
 {
+  gNowTime = time(NULL);
   checkStatus();
   checkSchedule();
   checkOpenAlart();
@@ -145,7 +147,7 @@ void checkStatus()
     Serial.print(newStatus);
     if (newStatus == sPrevStatus)
     {
-      if (time(NULL) - gPrevTime > 1)
+      if (gNowTime - gPrevTime > 1)
       {
         if ((gStatus == 0 || gStatus == 2) && newStatus == 1) // リセットのルーチン作り終えたら|| gStatus == 2は消すこと
         {
@@ -162,7 +164,7 @@ void checkStatus()
         }
         sPrevStatus = newStatus;
         gChangeStatus = 0;
-        Serial.print(time(NULL));
+        Serial.print(gNowTime);
         Serial.print(":");
         Serial.println(gStatus);
       }
@@ -170,19 +172,25 @@ void checkStatus()
     else
     {
       sPrevStatus = newStatus;
-      gPrevTime = time(NULL);
+      gPrevTime = gNowTime;
     }
   }
 }
 
 void checkOpenAlart()
 {
-  if (gStatus == 1 && (time(NULL) - gPrevTime > LEFTOPEN_ALERT_TIME))
+  if (gStatus == 1 && (gNowTime - gPrevTime > LEFTOPEN_ALERT_TIME)) // 開いたまま時間経過（閉め忘れ=飲んではいる）
   {
     gStatus = 99;
     gFlag = 0;
     Serial.println("閉め忘れ");
   }
+  if (gStatus == 0 && (gNowTime - gPrevTime > FORGET_ALERT_TIME)&&gFlag) // 通知があるのに一定時間空けていない（飲み忘れ）
+  {
+      gStatus = 100;
+      Serial.println("飲み忘れ");
+  }
+
   if (gStatus == 99)
   {
     for (uint8_t i = 0; i < NUM_LEDS; ++i)
@@ -195,23 +203,22 @@ void checkOpenAlart()
 
 void checkSchedule()
 {
-  uint64_t nowTime = time(NULL);
   uint8_t flag = 0;
-  static uint64_t sReserveTime[4] = {nowTime + gSchedule[0], nowTime + gSchedule[1], nowTime + gSchedule[2], nowTime + gSchedule[3]};
+  static uint64_t sReserveTime[4] = {gNowTime + gSchedule[0], gNowTime + gSchedule[1], gNowTime + gSchedule[2], gNowTime + gSchedule[3]};
 
-  if (nowTime > sReserveTime[0])
+  if (gNowTime > sReserveTime[0])
   {
     flag = 1;
   }
-  if (nowTime > sReserveTime[1])
+  if (gNowTime > sReserveTime[1])
   {
     flag = flag | 2;
   }
-  if (nowTime > sReserveTime[2])
+  if (gNowTime > sReserveTime[2])
   {
     flag = flag | 4;
   }
-  if (nowTime > sReserveTime[3])
+  if (gNowTime > sReserveTime[3])
   {
     flag = flag | 8;
   }
