@@ -97,11 +97,7 @@ void handleNotFound(void)
 /* マルチタスクでHTTP & OTA待ち受け */
 void htmlTask(void *pvParameters)
 {
-  connectToWifi();  // Wi-Fiルーターに接続する
-  startMDNS();      // Multicast DNS
-  startWebServer(); // WebServer
-  startOTA();
-  configTime(JST, 0, NTPServer1, NTPServer2); // NTPの設定
+  
 
   while (true)
   {
@@ -137,6 +133,7 @@ void startMDNS()
     Serial.print(".");
     delay(100);
   }
+  Serial.println("");
 }
 
 void startWebServer()

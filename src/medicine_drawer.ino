@@ -16,7 +16,7 @@ void checkOpenAlart(void);
 #define SPI_SPEED 115200 // SPI通信速度
 
 /* 利用人数 */
-#define NUM_USER 1
+//#define NUM_USER 1
 
 /* 飲み忘れアラートまでの時間(S) */
 #define FORGET_ALERT_TIME 30
@@ -59,7 +59,7 @@ uint8_t gStatus = 0;
 time_t gPrevTime;    //  チャタリング対策
 struct tm gTimeInfo; //時刻を格納するオブジェクト
 
-uint32_t gSchedule[NUM_USER][4] = {{10,20,30,0}};
+uint32_t gSchedule[4] = {10, 20, 30, 0};
 
 /*****************************************************************************
                             Predetermined Sequence
@@ -79,6 +79,7 @@ void loop()
   notification(0b1111);
   checkSchedule();
   checkOpenAlart();
+  FastLED.show();
 
   FastLED.delay(1000 / 30); // insert a delay to keep the framerate modest
   EVERY_N_MILLISECONDS(20)
@@ -94,6 +95,12 @@ void loop()
 void doInitialize()
 {
   Serial.begin(SPI_SPEED);
+
+  connectToWifi();                            // Wi-Fiルーターに接続する
+  startMDNS();                                // Multicast DNS
+  startWebServer();                           // WebServer
+  configTime(JST, 0, NTPServer1, NTPServer2); // NTPの設定
+  startOTA();
 
   FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setBrightness(gBrightness);
@@ -123,7 +130,6 @@ void notification(uint8_t thisFlag)
       }
     }
   }
-  FastLED.show();
 }
 
 void changeStatus()
@@ -167,7 +173,7 @@ void checkStatus()
 
 void checkOpenAlart()
 {
-  if (gStatus == 1 && (time(NULL) - gPrevTime > LEFTOPEN_ALERT_TIME)
+  if (gStatus == 1 && (time(NULL) - gPrevTime > LEFTOPEN_ALERT_TIME))
   {
     gStatus = 99;
     Serial.println("閉め忘れ");
@@ -178,11 +184,9 @@ void checkOpenAlart()
     {
       leds[i] = ColorFromPalette(HeatColors_p, gHue + i, 255);
     }
-    FastLED.show();
-   }
+  }
 }
 
 void checkSchedule()
 {
-  
 }
