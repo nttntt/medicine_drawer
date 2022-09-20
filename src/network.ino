@@ -20,21 +20,24 @@ const String strHtmlHeader = R"rawliteral(
 const String strHtmlBody = R"rawliteral(
   <body>
     <h1>%PAGE_TITLE%</h1>
-    <table><tr><th>ELEMENT</th><th>VALUE</th></tr>
-    <tr><td>Pattern</td><td><span class="value">%PATTERN%</span></td></tr>
-    <tr><td>Brightness</td><td><span class="value">%BRIGHTNESS%</span></td></tr>
-    <tr><td>Sensitivity</td><td><span class="value">%SENSITIVITY%</span></td></tr>
+    <form action="/" method="get">
+    <table>
+    <tr><th></th><th>朝食後</th><th>昼食後</th><th>夕食後</th></tr>
+    <tr><th>服用時間</th>
+      <td><input type="text" name="hour1" value="%hour1%" size="5">:<input type="text" name="minute1" value="%minute1%" size="5"></td>
+      <td><input type="text" name="hour2" value="%hour2%" size="5">:<input type="text" name="minute2" value="%minute2%" size="5"></td>
+      <td><input type="text" name="hour3" value="%hour3%" size="5">:<input type="text" name="minute3" value="%minute3%" size="5"></td></tr>
+    <tr><th>グループ1</th>
+      <td><input type="text" name="11" value="%11%" size="5"></td><td><input type="text" name="12" value="%12%" size="5"></td><td><input type="text" name="13" value="%13%" size="5"></td></tr>
+    <tr><th>グループ2</th>
+      <td><input type="text" name="21" value="%21%" size="5"></td><td><input type="text" name="22" value="%22%" size="5"></td><td><input type="text" name="23" value="%23%" size="5"></td></tr>
+    <tr><th>グループ3</th>
+      <td><input type="text" name="31" value="%31%" size="5"></td><td><input type="text" name="32" value="%32%" size="5"></td><td><input type="text" name="33" value="%33%" size="5"></td></tr>
+    <tr><th>グループ4</th>
+      <td><input type="text" name="41" value="%41%" size="5"></td><td><input type="text" name="42" value="%42%" size="5"></td><td><input type="text" name="43" value="%43%" size="5"></td></tr>
     </table>
-    <input type="button" value="1" style="font-size:32px;" onclick="location.href='/?button=1';">
-    <input type="button" value="2" style="font-size:32px;" onclick="location.href='/?button=2';">
-    <input type="button" value="3" style="font-size:32px;" onclick="location.href='/?button=3';">
-    <input type="button" value="4" style="font-size:32px;" onclick="location.href='/?button=4';">
-    <input type="button" value="0" style="font-size:32px;" onclick="location.href='/?button=0';"><br>
-    
-<form action="/" method="get">
-<input type="text" name="valueR"><br><input type="text" name="valueG"><br><input type="text" name="valueB">
-<input type="submit" name="button" value="send">
-</form>
+    <input type="submit" name="button" value="send">
+    </form>
   </body></html>
 )rawliteral";
 
@@ -44,12 +47,12 @@ void httpSendResponse(void)
   String strHtml = strHtmlHeader + strHtmlBody;
   char numStr[10];
   strHtml.replace("%PAGE_TITLE%", mDNS_NAME);
-  sprintf(numStr, "%d", gGroup);
-  strHtml.replace("%PATTERN%", numStr);
+  sprintf(numStr, "%d", 1);
+  strHtml.replace("%hour1%", numStr);
   sprintf(numStr, "%d", 0);
-  strHtml.replace("%BRIGHTNESS%", numStr);
+  strHtml.replace("%minute1%", numStr);
   sprintf(numStr, "%d", 0);
-  strHtml.replace("%SENSITIVITY%", numStr);
+  strHtml.replace("%11%", numStr);
   // HTMLを出力する
   server.send(200, "text/html", strHtml);
 }
@@ -97,7 +100,6 @@ void handleNotFound(void)
 /* マルチタスクでHTTP & OTA待ち受け */
 void htmlTask(void *pvParameters)
 {
-  
 
   while (true)
   {
@@ -134,6 +136,14 @@ void startMDNS()
     delay(100);
   }
   Serial.println("");
+}
+
+void setTime()
+{
+  Serial.print("Ajust time from NTP..");
+  configTime(JST, 0, NTPServer1, NTPServer2); // NTPの設定
+  getLocalTime(&gTimeInfo);
+  Serial.printf("%04d/%02d/%02d %02d:%02d:%02d\n", gTimeInfo.tm_year + 1900, gTimeInfo.tm_mon + 1, gTimeInfo.tm_mday, gTimeInfo.tm_hour, gTimeInfo.tm_min, gTimeInfo.tm_sec);
 }
 
 void startWebServer()

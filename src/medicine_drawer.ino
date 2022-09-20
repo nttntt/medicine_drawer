@@ -6,7 +6,7 @@
 
 /* Function Prototype  */
 void doInitialize(void);
-void notification(uint8_t);
+void notification(void);
 void changeStatus(void);
 void checkStatus(void);
 void checkSchedule(void);
@@ -53,13 +53,14 @@ CRGB groupColor[] = {CRGB::Red, CRGB::Blue, CRGB::Green, CRGB::Purple, CRGB::Yel
 uint8_t gBrightness = BRIGHTNESS;
 uint8_t gHue = 0; // rotating "base color" used by many of the patterns
 
-uint8_t gGroup = 2;
+uint8_t gGroup = 4;
 uint8_t gChangeStatus = 0;
 uint8_t gStatus = 0;
+uint8_t gFlag = 0;
 time_t gPrevTime;    //  チャタリング対策
 struct tm gTimeInfo; //時刻を格納するオブジェクト
 
-uint32_t gSchedule[4] = {10, 20, 30, 0};
+uint64_t gSchedule[4] = {10, 30, 10, 20};
 
 /*****************************************************************************
                             Predetermined Sequence
@@ -75,11 +76,8 @@ void setup()
 void loop()
 {
   checkStatus();
-
-  notification(0b1111);
   checkSchedule();
   checkOpenAlart();
-  FastLED.show();
 
   FastLED.delay(1000 / 30); // insert a delay to keep the framerate modest
   EVERY_N_MILLISECONDS(20)
@@ -96,10 +94,10 @@ void doInitialize()
 {
   Serial.begin(SPI_SPEED);
 
-  connectToWifi();                            // Wi-Fiルーターに接続する
-  startMDNS();                                // Multicast DNS
-  startWebServer();                           // WebServer
-  configTime(JST, 0, NTPServer1, NTPServer2); // NTPの設定
+  connectToWifi();  // Wi-Fiルーターに接続する
+  startMDNS();      // Multicast DNS
+  startWebServer(); // WebServer
+  setTime();        // 初回の時刻合わせ
   startOTA();
 
   FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);
@@ -112,7 +110,7 @@ void doInitialize()
 
 /*****************************< LED functions >*****************************/
 
-void notification(uint8_t thisFlag)
+void notification()
 {
   FastLED.clear();
   if (!gGroup)
@@ -124,12 +122,13 @@ void notification(uint8_t thisFlag)
   {
     for (uint8_t i = 0; i < numUnit; ++i)
     {
-      if (thisFlag & (1 << g))
+      if (gFlag & (1 << g))
       {
         leds[numUnit * g + i + !!(NUM_LEDS % gGroup)] = groupColor[g + 1]; // 3グループの時は余りが出るので両端のLEDは光らせない
       }
     }
   }
+  FastLED.show();
 }
 
 void changeStatus()
@@ -152,9 +151,14 @@ void checkStatus()
         {
           gStatus = 1;
         }
-        else if ((gStatus == 1 || gStatus == 99) && newStatus == 0)
+        else if (gStatus == 1 && newStatus == 0)
         {
           gStatus = 2;
+        }
+        else if (gStatus == 99 && newStatus == 0)
+        {
+          gStatus = 0;
+          notification();
         }
         sPrevStatus = newStatus;
         gChangeStatus = 0;
@@ -176,6 +180,7 @@ void checkOpenAlart()
   if (gStatus == 1 && (time(NULL) - gPrevTime > LEFTOPEN_ALERT_TIME))
   {
     gStatus = 99;
+    gFlag = 0;
     Serial.println("閉め忘れ");
   }
   if (gStatus == 99)
@@ -185,8 +190,34 @@ void checkOpenAlart()
       leds[i] = ColorFromPalette(HeatColors_p, gHue + i, 255);
     }
   }
+  FastLED.show();
 }
 
 void checkSchedule()
 {
+  uint64_t nowTime = time(NULL);
+  uint8_t flag = 0;
+  static uint64_t sReserveTime[4] = {nowTime + gSchedule[0], nowTime + gSchedule[1], nowTime + gSchedule[2], nowTime + gSchedule[3]};
+
+  if (nowTime > sReserveTime[0])
+  {
+    flag = 1;
+  }
+  if (nowTime > sReserveTime[1])
+  {
+    flag = flag | 2;
+  }
+  if (nowTime > sReserveTime[2])
+  {
+    flag = flag | 4;
+  }
+  if (nowTime > sReserveTime[3])
+  {
+    flag = flag | 8;
+  }
+  if (flag != gFlag)
+  {
+    gFlag = flag;
+    notification();
+  }
 }
