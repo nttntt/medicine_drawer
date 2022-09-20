@@ -9,13 +9,20 @@ void doInitialize(void);
 void notification(uint8_t);
 void changeStatus(void);
 void checkStatus(void);
-void checkAlart(void);
+void checkSchedule(void);
+void checkOpenAlart(void);
 
 /* 基本属性定義 */
 #define SPI_SPEED 115200 // SPI通信速度
 
 /* 利用人数 */
 #define NUM_USER 1
+
+/* 飲み忘れアラートまでの時間(S) */
+#define FORGET_ALERT_TIME 30
+
+/* 締め忘れアラートまでの時間(S) */
+#define LEFTOPEN_ALERT_TIME 10
 
 // ルーター接続情報
 #define WIFI_SSID "0856g"
@@ -49,8 +56,10 @@ uint8_t gHue = 0; // rotating "base color" used by many of the patterns
 uint8_t gGroup = 2;
 uint8_t gChangeStatus = 0;
 uint8_t gStatus = 0;
-time_t gPrevTime = time(NULL); //  チャタリング対策
-struct tm gTimeInfo;           //時刻を格納するオブジェクト
+time_t gPrevTime;    //  チャタリング対策
+struct tm gTimeInfo; //時刻を格納するオブジェクト
+
+uint32_t gSchedule[NUM_USER][4] = {{10,20,30,0}};
 
 /*****************************************************************************
                             Predetermined Sequence
@@ -68,8 +77,8 @@ void loop()
   checkStatus();
 
   notification(0b1111);
-  checkAlart();
-  FastLED.show();
+  checkSchedule();
+  checkOpenAlart();
 
   FastLED.delay(1000 / 30); // insert a delay to keep the framerate modest
   EVERY_N_MILLISECONDS(20)
@@ -103,7 +112,7 @@ void notification(uint8_t thisFlag)
   {
     return;
   }
-  uint8_t numUnit = NUM_LEDS / gGroup;
+  uint8_t numUnit = NUM_LEDS / gGroup; // 一グループあたりのLED数
   for (uint8_t g = 0; g < gGroup; ++g)
   {
     for (uint8_t i = 0; i < numUnit; ++i)
@@ -114,6 +123,7 @@ void notification(uint8_t thisFlag)
       }
     }
   }
+  FastLED.show();
 }
 
 void changeStatus()
@@ -155,9 +165,9 @@ void checkStatus()
   }
 }
 
-void checkAlart()
+void checkOpenAlart()
 {
-  if (gStatus == 1 && (time(NULL) - gPrevTime > 10))
+  if (gStatus == 1 && (time(NULL) - gPrevTime > LEFTOPEN_ALERT_TIME)
   {
     gStatus = 99;
     Serial.println("閉め忘れ");
@@ -168,5 +178,11 @@ void checkAlart()
     {
       leds[i] = ColorFromPalette(HeatColors_p, gHue + i, 255);
     }
-  }
+    FastLED.show();
+   }
+}
+
+void checkSchedule()
+{
+  
 }
