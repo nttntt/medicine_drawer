@@ -19,7 +19,7 @@ void checkAlart(void);
 //#define NUM_USER 1
 
 /* 飲み忘れアラートまでの時間(S) */
-#define FORGET_ALERT_TIME 30
+#define FORGET_ALERT_TIME 5
 
 /* 締め忘れアラートまでの時間(S) */
 #define LEFTOPEN_ALERT_TIME 10
@@ -58,12 +58,12 @@ uint8_t gDrawerIsChanged = 0; // 引き出しの開け閉めフラグ
 uint8_t gDrawerStatus = 0;    // 引き出しの状態
 uint8_t gNoticeFlag = 0;      // 通知フラグ
 uint8_t gForgetFlag = 0;      // 飲み忘れフラグ
-time_t gDrawerMovedTime;      // 閉め忘れ・チャタリング対策
+time_t gDrawerMovedTime;      // 閉め忘れ対策
 time_t gScheduledTime;        // 飲み忘れ対策
 time_t gCurrentTime;          // 現在の時刻
 struct tm gTimeInfo;          // 時刻を格納するオブジェクト
 
-uint64_t gSchedule[4] = {10, 30, 10, 20};
+uint64_t gSchedule[4] = {20, 31, 28, 19};
 
 /*****************************************************************************
                             Predetermined Sequence
@@ -134,6 +134,10 @@ void displayNotice()
       {
         leds[numUnit * g + i + !!(NUM_LEDS % gGroup)] = groupColor[g + 1]; // 3グループの時は余りが出るので両端のLEDは光らせない
       }
+      if (gForgetFlag & (1 << g))
+      {
+        leds[numUnit * g + i + !!(NUM_LEDS % gGroup)] = groupColor[0]; // 飲み忘れの場合
+      }
     }
   }
 }
@@ -146,22 +150,27 @@ void changeStatus()
 void checkStatus()
 {
   static uint8_t sPrevStatus = 0;
+  static uint8_t sCounter = 0;
   if (gDrawerIsChanged)
   {
     uint8_t newStatus = digitalRead(SW1_PIN);
     Serial.print(newStatus);
     if (newStatus == sPrevStatus)
     {
-      if (gCurrentTime - gDrawerMovedTime > 1) // チャタリング防止の１秒待ち
+      sCounter++;
+      if (sCounter > 10) // チャタリング防止の１秒待ち
       {
-        if (gDrawerStatus == 0 && newStatus == 1) // 引き出しを開けた
+        if (gDrawerStatus == 0 && newStatus == 1) // 引き出しを開けたとき 飲み忘れフラグを通知フラグに戻してからクリア
         {
           gDrawerStatus = 1;
+          gNoticeFlag = gNoticeFlag | gForgetFlag;
+          gForgetFlag = 0;
         }
-        else if (gDrawerStatus == 1 && newStatus == 0) // 引き出しを閉じた
+        else if (gDrawerStatus == 1 && newStatus == 0) // 引き出しを閉じたとき 通知フラグをクリア
         {
           gDrawerStatus = 0;
           gNoticeFlag = 0;
+
           displayNotice();
         }
         else if (gDrawerStatus == 99 && newStatus == 0) // 閉め忘れを閉じた
@@ -169,9 +178,10 @@ void checkStatus()
           gDrawerStatus = 0;
           displayNotice();
         }
+        gDrawerMovedTime = gCurrentTime;
         sPrevStatus = newStatus;
         gDrawerIsChanged = 0;
-        Serial.print(gCurrentTime);
+
         Serial.print(":");
         Serial.println(gDrawerStatus);
       }
@@ -179,7 +189,7 @@ void checkStatus()
     else
     {
       sPrevStatus = newStatus;
-      gDrawerMovedTime = gCurrentTime;
+      sCounter = 0;
     }
   }
 }
@@ -192,9 +202,10 @@ void checkAlart()
     gNoticeFlag = 0;
     Serial.println("閉め忘れ");
   }
-  if (gDrawerStatus == 0 && (gCurrentTime - gScheduledTime > FORGET_ALERT_TIME) && gNoticeFlag) // 通知があるのに一定時間空けていない（飲み忘れ）
+  if (gDrawerStatus == 0 && (gCurrentTime - gScheduledTime > FORGET_ALERT_TIME) && gNoticeFlag) // 通知があるのに一定時間開けていない（飲み忘れ）
   {
     gForgetFlag = gForgetFlag | gNoticeFlag;
+    gNoticeFlag = 0;
     Serial.println("飲み忘れ");
   }
 
@@ -209,28 +220,32 @@ void checkAlart()
 
 void checkSchedule()
 {
-  uint8_t flag = 0;
   static uint64_t sReserveTime[4] = {gCurrentTime + gSchedule[0], gCurrentTime + gSchedule[1], gCurrentTime + gSchedule[2], gCurrentTime + gSchedule[3]};
 
   if (gCurrentTime > sReserveTime[0])
   {
-    flag = 1;
+    gNoticeFlag = gNoticeFlag | 1;
+    gScheduledTime = sReserveTime[0];
+    sReserveTime[0] = gCurrentTime + gSchedule[0];
   }
   if (gCurrentTime > sReserveTime[1])
   {
-    flag = flag | 2;
+    gNoticeFlag = gNoticeFlag | 2;
+    gScheduledTime = sReserveTime[1];
+    sReserveTime[1] = gCurrentTime + gSchedule[1];
   }
   if (gCurrentTime > sReserveTime[2])
   {
-    flag = flag | 4;
+    gNoticeFlag = gNoticeFlag | 4;
+    gScheduledTime = sReserveTime[2];
+    sReserveTime[2] = gCurrentTime + gSchedule[2];
   }
   if (gCurrentTime > sReserveTime[3])
   {
-    flag = flag | 8;
+    gNoticeFlag = gNoticeFlag | 8;
+    gScheduledTime = sReserveTime[3];
+    sReserveTime[3] = gCurrentTime + gSchedule[3];
   }
-  if (flag != gNoticeFlag)
-  {
-    gNoticeFlag = flag;
-    displayNotice();
-  }
+
+  displayNotice();
 }
