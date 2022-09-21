@@ -6,11 +6,11 @@
 
 /* Function Prototype  */
 void doInitialize(void);
-void notification(void);
+void displayNotice(void);
 void changeStatus(void);
 void checkStatus(void);
 void checkSchedule(void);
-void checkOpenAlart(void);
+void checkAlart(void);
 
 /* 基本属性定義 */
 #define SPI_SPEED 115200 // SPI通信速度
@@ -53,13 +53,15 @@ CRGB groupColor[] = {CRGB::Red, CRGB::Blue, CRGB::Green, CRGB::Purple, CRGB::Yel
 uint8_t gBrightness = BRIGHTNESS;
 uint8_t gHue = 0; // rotating "base color" used by many of the patterns
 
-uint8_t gGroup = 4;
-uint8_t gChangeStatus = 0;
-uint8_t gStatus = 0;
-uint8_t gFlag = 0;
-time_t gPrevTime;    //  チャタリング対策
-time_t gNowTime;
-struct tm gTimeInfo; //時刻を格納するオブジェクト
+uint8_t gGroup = 4;           // 投薬タイミングのグループ数
+uint8_t gDrawerIsChanged = 0; // 引き出しの開け閉めフラグ
+uint8_t gDrawerStatus = 0;    // 引き出しの状態
+uint8_t gNoticeFlag = 0;      // 通知フラグ
+uint8_t gForgetFlag = 0;      // 飲み忘れフラグ
+time_t gDrawerMovedTime;      // 閉め忘れ・チャタリング対策
+time_t gScheduledTime;        // 飲み忘れ対策
+time_t gCurrentTime;          // 現在の時刻
+struct tm gTimeInfo;          // 時刻を格納するオブジェクト
 
 uint64_t gSchedule[4] = {10, 30, 10, 20};
 
@@ -76,10 +78,12 @@ void setup()
 
 void loop()
 {
-  gNowTime = time(NULL);
+  gCurrentTime = time(NULL);
   checkStatus();
   checkSchedule();
-  checkOpenAlart();
+  checkAlart();
+
+  FastLED.show();
 
   FastLED.delay(1000 / 30); // insert a delay to keep the framerate modest
   EVERY_N_MILLISECONDS(20)
@@ -108,11 +112,13 @@ void doInitialize()
 
   pinMode(SW1_PIN, INPUT_PULLDOWN);
   attachInterrupt(SW1_PIN, changeStatus, CHANGE);
+
+  gDrawerStatus = digitalRead(SW1_PIN);
 }
 
 /*****************************< LED functions >*****************************/
 
-void notification()
+void displayNotice()
 {
   FastLED.clear();
   if (!gGroup)
@@ -124,107 +130,107 @@ void notification()
   {
     for (uint8_t i = 0; i < numUnit; ++i)
     {
-      if (gFlag & (1 << g))
+      if (gNoticeFlag & (1 << g))
       {
         leds[numUnit * g + i + !!(NUM_LEDS % gGroup)] = groupColor[g + 1]; // 3グループの時は余りが出るので両端のLEDは光らせない
       }
     }
   }
-  FastLED.show();
 }
 
 void changeStatus()
 {
-  gChangeStatus = 1;
+  gDrawerIsChanged = 1;
 }
 
 void checkStatus()
 {
   static uint8_t sPrevStatus = 0;
-  if (gChangeStatus)
+  if (gDrawerIsChanged)
   {
     uint8_t newStatus = digitalRead(SW1_PIN);
     Serial.print(newStatus);
     if (newStatus == sPrevStatus)
     {
-      if (gNowTime - gPrevTime > 1)
+      if (gCurrentTime - gDrawerMovedTime > 1) // チャタリング防止の１秒待ち
       {
-        if ((gStatus == 0 || gStatus == 2) && newStatus == 1) // リセットのルーチン作り終えたら|| gStatus == 2は消すこと
+        if (gDrawerStatus == 0 && newStatus == 1) // 引き出しを開けた
         {
-          gStatus = 1;
+          gDrawerStatus = 1;
         }
-        else if (gStatus == 1 && newStatus == 0)
+        else if (gDrawerStatus == 1 && newStatus == 0) // 引き出しを閉じた
         {
-          gStatus = 2;
+          gDrawerStatus = 0;
+          gNoticeFlag = 0;
+          displayNotice();
         }
-        else if (gStatus == 99 && newStatus == 0)
+        else if (gDrawerStatus == 99 && newStatus == 0) // 閉め忘れを閉じた
         {
-          gStatus = 0;
-          notification();
+          gDrawerStatus = 0;
+          displayNotice();
         }
         sPrevStatus = newStatus;
-        gChangeStatus = 0;
-        Serial.print(gNowTime);
+        gDrawerIsChanged = 0;
+        Serial.print(gCurrentTime);
         Serial.print(":");
-        Serial.println(gStatus);
+        Serial.println(gDrawerStatus);
       }
     }
     else
     {
       sPrevStatus = newStatus;
-      gPrevTime = gNowTime;
+      gDrawerMovedTime = gCurrentTime;
     }
   }
 }
 
-void checkOpenAlart()
+void checkAlart()
 {
-  if (gStatus == 1 && (gNowTime - gPrevTime > LEFTOPEN_ALERT_TIME)) // 開いたまま時間経過（閉め忘れ=飲んではいる）
+  if (gDrawerStatus == 1 && (gCurrentTime - gDrawerMovedTime > LEFTOPEN_ALERT_TIME)) // 開いたまま時間経過（閉め忘れ=飲んではいる）
   {
-    gStatus = 99;
-    gFlag = 0;
+    gDrawerStatus = 99;
+    gNoticeFlag = 0;
     Serial.println("閉め忘れ");
   }
-  if (gStatus == 0 && (gNowTime - gPrevTime > FORGET_ALERT_TIME)&&gFlag) // 通知があるのに一定時間空けていない（飲み忘れ）
+  if (gDrawerStatus == 0 && (gCurrentTime - gScheduledTime > FORGET_ALERT_TIME) && gNoticeFlag) // 通知があるのに一定時間空けていない（飲み忘れ）
   {
-      gStatus = 100;
-      Serial.println("飲み忘れ");
+    gForgetFlag = gForgetFlag | gNoticeFlag;
+    Serial.println("飲み忘れ");
   }
 
-  if (gStatus == 99)
+  if (gDrawerStatus == 99)
   {
     for (uint8_t i = 0; i < NUM_LEDS; ++i)
     {
       leds[i] = ColorFromPalette(HeatColors_p, gHue + i, 255);
     }
   }
-  FastLED.show();
 }
 
 void checkSchedule()
 {
   uint8_t flag = 0;
-  static uint64_t sReserveTime[4] = {gNowTime + gSchedule[0], gNowTime + gSchedule[1], gNowTime + gSchedule[2], gNowTime + gSchedule[3]};
+  static uint64_t sReserveTime[4] = {gCurrentTime + gSchedule[0], gCurrentTime + gSchedule[1], gCurrentTime + gSchedule[2], gCurrentTime + gSchedule[3]};
 
-  if (gNowTime > sReserveTime[0])
+  if (gCurrentTime > sReserveTime[0])
   {
     flag = 1;
   }
-  if (gNowTime > sReserveTime[1])
+  if (gCurrentTime > sReserveTime[1])
   {
     flag = flag | 2;
   }
-  if (gNowTime > sReserveTime[2])
+  if (gCurrentTime > sReserveTime[2])
   {
     flag = flag | 4;
   }
-  if (gNowTime > sReserveTime[3])
+  if (gCurrentTime > sReserveTime[3])
   {
     flag = flag | 8;
   }
-  if (flag != gFlag)
+  if (flag != gNoticeFlag)
   {
-    gFlag = flag;
-    notification();
+    gNoticeFlag = flag;
+    displayNotice();
   }
 }
