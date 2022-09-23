@@ -24,17 +24,17 @@ const String strHtmlBody = R"rawliteral(
     <table>
     <tr><th></th><th>朝食後</th><th>昼食後</th><th>夕食後</th></tr>
     <tr><th>服用時間</th>
-      <td><input type="text" name="hour1" value="%hour1%" size="5">:<input type="text" name="minute1" value="%minute1%" size="5"></td>
-      <td><input type="text" name="hour2" value="%hour2%" size="5">:<input type="text" name="minute2" value="%minute2%" size="5"></td>
-      <td><input type="text" name="hour3" value="%hour3%" size="5">:<input type="text" name="minute3" value="%minute3%" size="5"></td></tr>
-    <tr><th>グループ1</th>
-      <td><input type="text" name="11" value="%11%" size="5"></td><td><input type="text" name="12" value="%12%" size="5"></td><td><input type="text" name="13" value="%13%" size="5"></td></tr>
-    <tr><th>グループ2</th>
-      <td><input type="text" name="21" value="%21%" size="5"></td><td><input type="text" name="22" value="%22%" size="5"></td><td><input type="text" name="23" value="%23%" size="5"></td></tr>
-    <tr><th>グループ3</th>
-      <td><input type="text" name="31" value="%31%" size="5"></td><td><input type="text" name="32" value="%32%" size="5"></td><td><input type="text" name="33" value="%33%" size="5"></td></tr>
-    <tr><th>グループ4</th>
-      <td><input type="text" name="41" value="%41%" size="5"></td><td><input type="text" name="42" value="%42%" size="5"></td><td><input type="text" name="43" value="%43%" size="5"></td></tr>
+      <td><input type="text" name="hour0" value="%hour0%" size="3">:<input type="text" name="minutes0" value="%minutes0%" size="3"></td>
+      <td><input type="text" name="hour1" value="%hour1%" size="3">:<input type="text" name="minutes1" value="%minutes1%" size="3"></td>
+      <td><input type="text" name="hour2" value="%hour2%" size="3">:<input type="text" name="minutes2" value="%minutes2%" size="3"></td></tr>
+    <tr><th>グループA</th>
+      <td><input type="text" name="00" value="%00%" size="3"></td><td><input type="text" name="01" value="%01%" size="3"></td><td><input type="text" name="02" value="%02%" size="3"></td></tr>
+    <tr><th>グループB</th>
+      <td><input type="text" name="10" value="%10%" size="3"></td><td><input type="text" name="11" value="%11%" size="3"></td><td><input type="text" name="12" value="%12%" size="3"></td></tr>
+    <tr><th>グループC</th>
+      <td><input type="text" name="20" value="%20%" size="3"></td><td><input type="text" name="21" value="%21%" size="3"></td><td><input type="text" name="22" value="%22%" size="3"></td></tr>
+    <tr><th>グループD</th>
+      <td><input type="text" name="30" value="%30%" size="3"></td><td><input type="text" name="31" value="%31%" size="3"></td><td><input type="text" name="32" value="%32%" size="3"></td></tr>
     </table>
     <input type="submit" name="button" value="send">
     </form>
@@ -46,13 +46,22 @@ void httpSendResponse(void)
 {
   String strHtml = strHtmlHeader + strHtmlBody;
   char numStr[10];
-  strHtml.replace("%PAGE_TITLE%", mDNS_NAME);
-  sprintf(numStr, "%d", 1);
-  strHtml.replace("%hour1%", numStr);
-  sprintf(numStr, "%d", 0);
-  strHtml.replace("%minute1%", numStr);
-  sprintf(numStr, "%d", 0);
-  strHtml.replace("%11%", numStr);
+  strHtml.replace("%PAGE_TITLE%", DEVICE_NAME);
+  for (uint8_t i = 0; i < 3; ++i)
+  {
+    sprintf(numStr, "%d", data.hour[i]);
+    strHtml.replace("%hour" + String(i) + "%", numStr);
+    sprintf(numStr, "%d", data.minutes[i]);
+    strHtml.replace("%minutes" + String(i) + "%", numStr);
+  }
+  for (uint8_t j = 0; j < 4; ++j)
+  {
+    for (uint8_t i = 0; i < 3; ++i)
+    {
+      sprintf(numStr, "%d", data.interval[j][i]);
+      strHtml.replace("%" + String(j) + String(i) + "%", numStr);
+    }
+  }
   // HTMLを出力する
   server.send(200, "text/html", strHtml);
 }
@@ -65,28 +74,24 @@ void handleHtml(void)
   if (server.hasArg("button"))
   {
     // パラメータに応じて、LEDを操作
-    if (server.arg("button").equals("1"))
+    if (server.arg("button").equals("send"))
     {
-      gGroup = 1;
-    }
-    else if (server.arg("button").equals("2"))
-    {
-      gGroup = 2;
-    }
-    else if (server.arg("button").equals("3"))
-    {
-      gGroup = 3;
-    }
-    else if (server.arg("button").equals("4"))
-    {
-      gGroup = 4;
-    }
-    else if (server.arg("button").equals("0"))
-    {
-      gGroup = 0;
+      for (uint8_t i = 0; i < 3; ++i)
+      {
+        data.hour[i] = server.arg("hour" + String(i)).toInt();
+        data.minutes[i] = server.arg("minutes" + String(i)).toInt();
+      }
+      for (uint8_t j = 0; j < 4; ++j)
+      {
+        for (uint8_t i = 0; i < 3; ++i)
+        {
+          data.interval[j][i] = server.arg(String(j) + String(i)).toInt();
+        }
+      }
     }
   }
   // ページ更新
+  Serial.println("HTTP");
   httpSendResponse();
 }
 
@@ -105,7 +110,7 @@ void htmlTask(void *pvParameters)
   {
     server.handleClient(); // HTTPをリスンする
     ArduinoOTA.handle();
-    delay(1);
+    delay(10);
   }
 }
 
@@ -130,7 +135,7 @@ void connectToWifi()
 void startMDNS()
 {
   Serial.print("mDNS server instancing ");
-  while (!MDNS.begin(mDNS_NAME))
+  while (!MDNS.begin(DEVICE_NAME))
   {
     Serial.print(".");
     delay(100);
@@ -156,7 +161,7 @@ void startWebServer()
 
 void startOTA()
 {
-  ArduinoOTA.setHostname(mDNS_NAME)
+  ArduinoOTA.setHostname(DEVICE_NAME)
       .onStart([]()
                {
         String type;

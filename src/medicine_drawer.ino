@@ -3,6 +3,7 @@
 #include <FastLED.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <EEPROM.h>
 
 /* Function Prototype  */
 void doInitialize(void);
@@ -28,7 +29,7 @@ void checkAlart(void);
 #define WIFI_SSID "0856g"
 #define WIFI_PASSWORD "nttnttntt"
 // Multicast DNS名
-#define mDNS_NAME "medicine_drawer"
+#define DEVICE_NAME "medicine_drawer"
 // 時間取得
 #define JST 9 * 3600L
 #define NTPServer1 "192.168.1.10"
@@ -36,7 +37,6 @@ void checkAlart(void);
 
 // Webサーバーオブジェクト
 #define HTTP_PORT 80
-WebServer server(HTTP_PORT);
 
 /* LED関連 */
 #define DATA_PIN 25
@@ -53,18 +53,27 @@ CRGB groupColor[] = {CRGB::Red, CRGB::Blue, CRGB::Green, CRGB::Purple, CRGB::Yel
 uint8_t gBrightness = BRIGHTNESS;
 uint8_t gHue = 0; // rotating "base color" used by many of the patterns
 
+WebServer server(HTTP_PORT);
+
 uint8_t gGroup = 4;           // 投薬タイミングのグループ数
 uint8_t gDrawerIsChanged = 0; // 引き出しの開け閉めフラグ
 uint8_t gDrawerStatus = 0;    // 引き出しの状態
 uint8_t gNoticeFlag = 0;      // 通知フラグ
-uint8_t gForgetFlag = 0;      // 飲み忘れフラグ
+uint8_t gAlartFlag = 0;       // 飲み忘れフラグ
 time_t gDrawerMovedTime;      // 閉め忘れ対策
 time_t gScheduledTime;        // 飲み忘れ対策
 time_t gCurrentTime;          // 現在の時刻
 struct tm gTimeInfo;          // 時刻を格納するオブジェクト
 
-uint64_t gSchedule[4] = {20, 31, 28, 19};
-
+struct _save_data
+{
+  uint8_t hour[3];
+  uint8_t minutes[3];
+  uint8_t interval[4][3];
+  time_t nextSchedule[4][3];
+  char check[16];
+};
+struct _save_data data;
 /*****************************************************************************
                             Predetermined Sequence
  *****************************************************************************/
@@ -103,8 +112,9 @@ void doInitialize()
   connectToWifi();  // Wi-Fiルーターに接続する
   startMDNS();      // Multicast DNS
   startWebServer(); // WebServer
-  setTime();        // 初回の時刻合わせ
   startOTA();
+  setTime();          // 初回の時刻合わせ
+  setFirstSchedule(); // 初回の予約時間設定
 
   FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setBrightness(gBrightness);
@@ -114,6 +124,86 @@ void doInitialize()
   attachInterrupt(SW1_PIN, changeStatus, CHANGE);
 
   gDrawerStatus = digitalRead(SW1_PIN);
+}
+
+void setFirstSchedule()
+{
+  EEPROM.begin(128);
+  EEPROM.get(0, data);
+  if (strcmp(data.check, DEVICE_NAME)) //保存データかチェックしてデータが無い場合0で初期化
+  {
+    for (uint8_t i = 0; i < 3; ++i)
+    {
+      data.hour[i] = 0;
+      data.minutes[i] = 0;
+    }
+    for (uint8_t g = 0; g < 4; ++g)
+    {
+      for (uint8_t i = 0; i < 3; ++i)
+      {
+        data.interval[g][i] = 0;
+      }
+    }
+    strncpy(data.check, DEVICE_NAME, 16); // 保存データの証にデバイス名を登録
+  }
+  // 予約時刻をtime_t形式でに変換
+  gCurrentTime = time(NULL);
+  for (uint8_t g = 0; g < 4; ++g)
+  {
+    for (uint8_t i = 0; i < 3; ++i)
+    {
+      if (data.interval[g][i]) // インターバルが0以外の時
+      {
+        getLocalTime(&gTimeInfo);
+        struct tm tmpSchedule = {0, data.minutes[i], data.hour[i], gTimeInfo.tm_mday, gTimeInfo.tm_mon, gTimeInfo.tm_year}; // 今日の日付で予約時間を仮計算
+        time_t tmpTime = mktime(&tmpSchedule);                                                                              // 仮予約時間をtime_tへ
+        if (tmpTime < gCurrentTime)                                                                                         // 予約時間を過ぎていたら24時間後の予約に
+        {
+          tmpTime += 24 * 60 * 60;
+        }
+        data.nextSchedule[g][i] = tmpTime;
+      }
+      else
+      {
+        data.nextSchedule[g][i] = 0;
+      }
+    }
+  }
+
+  // /////////////////////////////////////////////
+  gTimeInfo = *localtime(&data.nextSchedule[0][0]);
+  Serial.printf("%04d/%02d/%02d %02d:%02d:%02d\n", gTimeInfo.tm_year + 1900, gTimeInfo.tm_mon + 1, gTimeInfo.tm_mday, gTimeInfo.tm_hour, gTimeInfo.tm_min, gTimeInfo.tm_sec);
+  gTimeInfo = *localtime(&data.nextSchedule[1][1]);
+  Serial.printf("%04d/%02d/%02d %02d:%02d:%02d\n", gTimeInfo.tm_year + 1900, gTimeInfo.tm_mon + 1, gTimeInfo.tm_mday, gTimeInfo.tm_hour, gTimeInfo.tm_min, gTimeInfo.tm_sec);
+  gTimeInfo = *localtime(&data.nextSchedule[2][2]);
+  Serial.printf("%04d/%02d/%02d %02d:%02d:%02d\n", gTimeInfo.tm_year + 1900, gTimeInfo.tm_mon + 1, gTimeInfo.tm_mday, gTimeInfo.tm_hour, gTimeInfo.tm_min, gTimeInfo.tm_sec);
+  gTimeInfo = *localtime(&data.nextSchedule[3][0]);
+  Serial.printf("%04d/%02d/%02d %02d:%02d:%02d\n", gTimeInfo.tm_year + 1900, gTimeInfo.tm_mon + 1, gTimeInfo.tm_mday, gTimeInfo.tm_hour, gTimeInfo.tm_min, gTimeInfo.tm_sec);
+
+  data.nextSchedule[0][0] = 31;
+  data.nextSchedule[1][0] = 31;
+  data.nextSchedule[2][0] = 28;
+  data.nextSchedule[3][0] = 19;
+  // /////////////////////////////////////////////
+  EEPROM.put(0, data);
+  EEPROM.commit();
+}
+
+void setNextSchedule()
+{
+
+  getLocalTime(&gTimeInfo);
+  struct tm tmpSchedule = {0, data.minutes[0], data.hour[0], gTimeInfo.tm_mday, gTimeInfo.tm_mon, gTimeInfo.tm_year}; // 今日の日付で予約時間を仮計算
+  time_t tmpTime = mktime(&tmpSchedule);                                                                              // 仮予約時間をtime_tへ
+  if (tmpTime < gCurrentTime)                                                                                         // 予約時間を過ぎていたら24時間後の予約に
+  {
+    tmpTime += 24 * 60 * 60;
+  }
+
+  data.nextSchedule[0][0] = tmpTime;
+  tmpSchedule = *localtime(&tmpTime);
+  gTimeInfo = tmpSchedule;
+  Serial.printf("%04d/%02d/%02d %02d:%02d:%02d\n", gTimeInfo.tm_year + 1900, gTimeInfo.tm_mon + 1, gTimeInfo.tm_mday, gTimeInfo.tm_hour, gTimeInfo.tm_min, gTimeInfo.tm_sec);
 }
 
 /*****************************< LED functions >*****************************/
@@ -134,9 +224,16 @@ void displayNotice()
       {
         leds[numUnit * g + i + !!(NUM_LEDS % gGroup)] = groupColor[g + 1]; // 3グループの時は余りが出るので両端のLEDは光らせない
       }
-      if (gForgetFlag & (1 << g))
+      if (gAlartFlag & (1 << g))
       {
-        leds[numUnit * g + i + !!(NUM_LEDS % gGroup)] = groupColor[0]; // 飲み忘れの場合
+        if (i % 2)
+        {
+          leds[numUnit * g + i + !!(NUM_LEDS % gGroup)] = groupColor[g + 1]; // 飲み忘れの場合
+        }
+        else
+        {
+          leds[numUnit * g + i + !!(NUM_LEDS % gGroup)] = groupColor[0];
+        }
       }
     }
   }
@@ -158,13 +255,13 @@ void checkStatus()
     if (newStatus == sPrevStatus)
     {
       sCounter++;
-      if (sCounter > 10) // チャタリング防止の１秒待ち
+      if (sCounter > 10) // チャタリング防止の10カウント待ち
       {
         if (gDrawerStatus == 0 && newStatus == 1) // 引き出しを開けたとき 飲み忘れフラグを通知フラグに戻してからクリア
         {
           gDrawerStatus = 1;
-          gNoticeFlag = gNoticeFlag | gForgetFlag;
-          gForgetFlag = 0;
+          gNoticeFlag = gNoticeFlag | gAlartFlag;
+          gAlartFlag = 0;
         }
         else if (gDrawerStatus == 1 && newStatus == 0) // 引き出しを閉じたとき 通知フラグをクリア
         {
@@ -204,7 +301,7 @@ void checkAlart()
   }
   if (gDrawerStatus == 0 && (gCurrentTime - gScheduledTime > FORGET_ALERT_TIME) && gNoticeFlag) // 通知があるのに一定時間開けていない（飲み忘れ）
   {
-    gForgetFlag = gForgetFlag | gNoticeFlag;
+    gAlartFlag = gAlartFlag | gNoticeFlag;
     gNoticeFlag = 0;
     Serial.println("飲み忘れ");
   }
@@ -220,31 +317,31 @@ void checkAlart()
 
 void checkSchedule()
 {
-  static uint64_t sReserveTime[4] = {gCurrentTime + gSchedule[0], gCurrentTime + gSchedule[1], gCurrentTime + gSchedule[2], gCurrentTime + gSchedule[3]};
+  static time_t sReserveTime[4] = {gCurrentTime + data.nextSchedule[0][0], gCurrentTime + data.nextSchedule[1][0], gCurrentTime + data.nextSchedule[2][0], gCurrentTime + data.nextSchedule[3][0]};
 
   if (gCurrentTime > sReserveTime[0])
   {
     gNoticeFlag = gNoticeFlag | 1;
     gScheduledTime = sReserveTime[0];
-    sReserveTime[0] = gCurrentTime + gSchedule[0];
+    sReserveTime[0] = gCurrentTime + data.nextSchedule[0][0];
   }
   if (gCurrentTime > sReserveTime[1])
   {
     gNoticeFlag = gNoticeFlag | 2;
     gScheduledTime = sReserveTime[1];
-    sReserveTime[1] = gCurrentTime + gSchedule[1];
+    sReserveTime[1] = gCurrentTime + data.nextSchedule[1][0];
   }
   if (gCurrentTime > sReserveTime[2])
   {
     gNoticeFlag = gNoticeFlag | 4;
     gScheduledTime = sReserveTime[2];
-    sReserveTime[2] = gCurrentTime + gSchedule[2];
+    sReserveTime[2] = gCurrentTime + data.nextSchedule[2][0];
   }
   if (gCurrentTime > sReserveTime[3])
   {
     gNoticeFlag = gNoticeFlag | 8;
     gScheduledTime = sReserveTime[3];
-    sReserveTime[3] = gCurrentTime + gSchedule[3];
+    sReserveTime[3] = gCurrentTime + data.nextSchedule[3][0];
   }
 
   displayNotice();
