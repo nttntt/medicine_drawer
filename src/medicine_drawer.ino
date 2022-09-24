@@ -65,7 +65,7 @@ time_t gScheduledTime;        // 飲み忘れ対策
 time_t gCurrentTime;          // 現在の時刻
 struct tm gTimeInfo;          // 時刻を格納するオブジェクト
 
-struct _save_data
+struct _EEPROM_DATA // もしtime_tが64ビットなら130バイトなのでEEPROMの確保はそれ以上で
 {
   uint8_t hour[3];
   uint8_t minutes[3];
@@ -73,7 +73,8 @@ struct _save_data
   time_t nextSchedule[4][3];
   char check[16];
 };
-struct _save_data data;
+struct _EEPROM_DATA data;
+
 /*****************************************************************************
                             Predetermined Sequence
  *****************************************************************************/
@@ -128,8 +129,10 @@ void doInitialize()
 
 void setFirstSchedule()
 {
-  EEPROM.begin(128);
+  EEPROM.begin(256);
   EEPROM.get(0, data);
+/*    for(int i=0;i<16;i++){Serial.print(data.check[i]);}
+  Serial.println("q");*/
   if (strcmp(data.check, DEVICE_NAME)) //保存データかチェックしてデータが無い場合0で初期化
   {
     for (uint8_t i = 0; i < 3; ++i)
@@ -144,24 +147,31 @@ void setFirstSchedule()
         data.interval[g][i] = 0;
       }
     }
-    strncpy(data.check, DEVICE_NAME, 16); // 保存データの証にデバイス名を登録
+    strncpy(data.check, DEVICE_NAME, 16); // データ保存の証にデバイス名を登録
   }
-  // 予約時刻をtime_t形式でに変換
+  
+  
   gCurrentTime = time(NULL);
+  getLocalTime(&gTimeInfo);
+  // 今日の0:00の時間をtime_tで計算
+  time_t midnightTime = gCurrentTime - gTimeInfo.tm_hour * 3600 - gTimeInfo.tm_min * 60 - gTimeInfo.tm_sec;
+  time_t tmpSchedule;
+
   for (uint8_t g = 0; g < 4; ++g)
   {
     for (uint8_t i = 0; i < 3; ++i)
     {
       if (data.interval[g][i]) // インターバルが0以外の時
       {
-        getLocalTime(&gTimeInfo);
-        struct tm tmpSchedule = {0, data.minutes[i], data.hour[i], gTimeInfo.tm_mday, gTimeInfo.tm_mon, gTimeInfo.tm_year}; // 今日の日付で予約時間を仮計算
-        time_t tmpTime = mktime(&tmpSchedule);                                                                              // 仮予約時間をtime_tへ
-        if (tmpTime < gCurrentTime)                                                                                         // 予約時間を過ぎていたら24時間後の予約に
+        if (data.nextSchedule[g][i] <= gCurrentTime) // 停電からの復帰などを想定して現在時刻より服薬予定時間が未来ならそのまま、過去なら24時間後にする
         {
-          tmpTime += 24 * 60 * 60;
+          tmpSchedule = midnightTime+data.hour[i] * 3600 + data.minutes[i] * 60;
+          if (tmpSchedule <= gCurrentTime) // 予約時間を過ぎていたら24時間後の予約に
+          {
+            tmpSchedule += 24 * 60 * 60;
+          }
+          data.nextSchedule[g][i] = tmpSchedule;
         }
-        data.nextSchedule[g][i] = tmpTime;
       }
       else
       {
@@ -169,7 +179,8 @@ void setFirstSchedule()
       }
     }
   }
-
+  EEPROM.put(0, data);
+  EEPROM.commit();
   // /////////////////////////////////////////////
   gTimeInfo = *localtime(&data.nextSchedule[0][0]);
   Serial.printf("%04d/%02d/%02d %02d:%02d:%02d\n", gTimeInfo.tm_year + 1900, gTimeInfo.tm_mon + 1, gTimeInfo.tm_mday, gTimeInfo.tm_hour, gTimeInfo.tm_min, gTimeInfo.tm_sec);
@@ -180,13 +191,11 @@ void setFirstSchedule()
   gTimeInfo = *localtime(&data.nextSchedule[3][0]);
   Serial.printf("%04d/%02d/%02d %02d:%02d:%02d\n", gTimeInfo.tm_year + 1900, gTimeInfo.tm_mon + 1, gTimeInfo.tm_mday, gTimeInfo.tm_hour, gTimeInfo.tm_min, gTimeInfo.tm_sec);
 
-  data.nextSchedule[0][0] = 31;
-  data.nextSchedule[1][0] = 31;
-  data.nextSchedule[2][0] = 28;
-  data.nextSchedule[3][0] = 19;
+ // data.nextSchedule[0][0] = 31;
+ // data.nextSchedule[1][0] = 31;
+ // data.nextSchedule[2][0] = 28;
+ // data.nextSchedule[3][0] = 19;
   // /////////////////////////////////////////////
-  EEPROM.put(0, data);
-  EEPROM.commit();
 }
 
 void setNextSchedule()
@@ -194,14 +203,14 @@ void setNextSchedule()
 
   getLocalTime(&gTimeInfo);
   struct tm tmpSchedule = {0, data.minutes[0], data.hour[0], gTimeInfo.tm_mday, gTimeInfo.tm_mon, gTimeInfo.tm_year}; // 今日の日付で予約時間を仮計算
-  time_t tmpTime = mktime(&tmpSchedule);                                                                              // 仮予約時間をtime_tへ
-  if (tmpTime < gCurrentTime)                                                                                         // 予約時間を過ぎていたら24時間後の予約に
+  time_t midnightTime = mktime(&tmpSchedule);                                                                         // 仮予約時間をtime_tへ
+  if (midnightTime < gCurrentTime)                                                                                    // 予約時間を過ぎていたら24時間後の予約に
   {
-    tmpTime += 24 * 60 * 60;
+    midnightTime += 24 * 60 * 60;
   }
 
-  data.nextSchedule[0][0] = tmpTime;
-  tmpSchedule = *localtime(&tmpTime);
+  data.nextSchedule[0][0] = midnightTime;
+  tmpSchedule = *localtime(&midnightTime);
   gTimeInfo = tmpSchedule;
   Serial.printf("%04d/%02d/%02d %02d:%02d:%02d\n", gTimeInfo.tm_year + 1900, gTimeInfo.tm_mon + 1, gTimeInfo.tm_mday, gTimeInfo.tm_hour, gTimeInfo.tm_min, gTimeInfo.tm_sec);
 }

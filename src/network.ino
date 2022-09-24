@@ -91,6 +91,9 @@ void handleHtml(void)
     }
   }
   // ページ更新
+  EEPROM.begin(256);
+  EEPROM.put(0, data);
+  EEPROM.commit();
   Serial.println("HTTP");
   httpSendResponse();
 }
@@ -140,7 +143,7 @@ void startMDNS()
     Serial.print(".");
     delay(100);
   }
-  Serial.println("");
+  Serial.println("OK");
 }
 
 void setTime()
