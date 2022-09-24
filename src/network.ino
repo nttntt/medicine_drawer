@@ -41,6 +41,7 @@ const String strHtmlBody = R"rawliteral(
   </body></html>
 )rawliteral";
 
+/****************************< HTTP functions >****************************/
 /* HTTP レスポンス処理 */
 void httpSendResponse(void)
 {
@@ -73,7 +74,7 @@ void handleHtml(void)
   // 「/?button=○」のパラメータが指定されているかどうかを確認
   if (server.hasArg("button"))
   {
-    // パラメータに応じて、LEDを操作
+    // パラメータに応じて、データ更新
     if (server.arg("button").equals("send"))
     {
       for (uint8_t i = 0; i < 3; ++i)
@@ -81,20 +82,32 @@ void handleHtml(void)
         data.hour[i] = server.arg("hour" + String(i)).toInt();
         data.minutes[i] = server.arg("minutes" + String(i)).toInt();
       }
-      for (uint8_t j = 0; j < 4; ++j)
+      gGroup = 0;
+      for (uint8_t g = 0; g < 4; ++g)
       {
+        uint8_t groupExist = 0;
         for (uint8_t i = 0; i < 3; ++i)
         {
-          data.interval[j][i] = server.arg(String(j) + String(i)).toInt();
+          data.interval[g][i] = server.arg(String(g) + String(i)).toInt();
+          if (data.interval[g][i]) // インターバルが0以外の時
+          {
+            groupExist++;
+          }
+        }
+        if (groupExist)
+        {
+          gGroup++;
         }
       }
     }
   }
-  // ページ更新
+
+  // データ保存
   EEPROM.begin(256);
   EEPROM.put(0, data);
   EEPROM.commit();
   Serial.println("HTTP");
+  // ページ更新
   httpSendResponse();
 }
 
@@ -102,19 +115,6 @@ void handleHtml(void)
 void handleNotFound(void)
 {
   server.send(404, "text/plain", "Not Found.");
-}
-
-/****************************< HTTP functions >****************************/
-/* マルチタスクでHTTP & OTA待ち受け */
-void htmlTask(void *pvParameters)
-{
-
-  while (true)
-  {
-    server.handleClient(); // HTTPをリスンする
-    ArduinoOTA.handle();
-    delay(10);
-  }
 }
 
 /* Wi-Fiルーターに接続する */
@@ -143,10 +143,10 @@ void startMDNS()
     Serial.print(".");
     delay(100);
   }
-  Serial.println("OK");
+  Serial.println("");
 }
 
-void setTime()
+void ajustTime()
 {
   Serial.print("Ajust time from NTP..");
   configTime(JST, 0, NTPServer1, NTPServer2); // NTPの設定
