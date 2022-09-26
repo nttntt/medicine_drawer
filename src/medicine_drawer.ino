@@ -20,7 +20,7 @@ void checkAlart(void);
 //#define NUM_USER 1
 
 /* 飲み忘れアラートまでの時間(S) */
-#define FORGET_ALERT_TIME 5
+#define FORGET_ALERT_TIME 10
 
 /* 締め忘れアラートまでの時間(S) */
 #define LEFTOPEN_ALERT_TIME 10
@@ -39,14 +39,14 @@ void checkAlart(void);
 #define HTTP_PORT 80
 
 /* LED関連 */
-#define DATA_PIN 25
+#define DATA_PIN 14
 #define LED_TYPE WS2812B
 #define COLOR_ORDER GRB
 #define NUM_LEDS 32
 #define BRIGHTNESS 64
 
 /* センサー関連 */
-#define SW1_PIN 5
+#define SW1_PIN 27
 
 CRGB leds[NUM_LEDS];
 CRGB groupColor[] = {CRGB::Red, CRGB::Blue, CRGB::Green, CRGB::Purple, CRGB::Yellow}; // グループのカラー設定
@@ -175,7 +175,7 @@ void initializeSchedule()
   EEPROM.put(0, data);
   EEPROM.commit();
   showSchedule();
-  // /////////////////////////////////////////////
+  /*/ /////////////////////////////////////////////
   data.nextSchedule[0][0] = gCurrentTime + 3;
   data.nextSchedule[1][0] = gCurrentTime + 10;
   data.nextSchedule[2][0] = gCurrentTime + 28;
@@ -197,17 +197,18 @@ void displayNotice()
   {
     for (uint8_t i = 0; i < numUnit; ++i)
     {
+      uint8_t currentLed = numUnit * g + i + (gGroup == 3) * g; // 3グループの時は余りが出るのでグループの境界のLEDは光らせない
       if (gNoticeFlag & (1 << g))
-      { // 時間になったら点灯  3グループの時は余りが出るので両端のLEDは光らせない
-        leds[numUnit * g + i + !!(NUM_LEDS % gGroup)] = groupColor[g + 1];
-      }
-      if (gAlartFlag & (1 << g))
-      { // 飲み忘れの時は点滅
-        leds[numUnit * g + i + !!(NUM_LEDS % gGroup)] = blend(groupColor[g + 1], CRGB::Black, beatsin8(30, 0, 255));
+      { // グループ1なら 0b0001 2なら0b0010 ... のフラグが立っているか調べる
+        leds[currentLed] = groupColor[g + 1];
       }
       if (gDrawerStatus == 99)
       { // 閉め忘れの時は赤点滅
-        leds[numUnit * g + i + !!(NUM_LEDS % gGroup)] = blend(groupColor[g + 1], groupColor[0], beatsin8(30, 0, 255));
+        leds[currentLed] = blend(leds[currentLed], groupColor[0], beatsin8(30, 0, 255));
+      }
+      else if (gAlartFlag & (1 << g))
+      { // 飲み忘れの時は点滅
+        leds[currentLed] = blend(groupColor[g + 1], CRGB::Black, beatsin8(30, 0, 255));
       }
     }
   }
@@ -281,6 +282,10 @@ void checkAlart()
 void checkSchedule()
 {
   uint8_t isChanged = 0;
+  getLocalTime(&gTimeInfo);
+  // 今日の0:00の時間をtime_tで計算
+  time_t midnightTime = gCurrentTime - gTimeInfo.tm_hour * 3600 - gTimeInfo.tm_min * 60 - gTimeInfo.tm_sec;
+
   for (uint8_t g = 0; g < 4; ++g)
   {
     for (uint8_t i = 0; i < 3; ++i)
@@ -289,18 +294,18 @@ void checkSchedule()
       {
         gNoticeFlag = gNoticeFlag | (uint8_t)pow(2, g);
         gScheduledTime = gCurrentTime;
-        data.nextSchedule[g][i] += data.interval[g][i] * 30; //* 24 * 3600;
+        data.nextSchedule[g][i] = midnightTime + data.hour[i] * 3600 + data.minutes[i] * 60 + data.interval[g][i] * 24 * 3600;
         isChanged = 1;
-
       }
     }
   }
+
   if (isChanged)
   {
-        showSchedule();
-    // EEPROM.begin(256);
-    // EEPROM.put(0, data);
-    // EEPROM.commit();
+    showSchedule();
+    EEPROM.begin(256);
+    EEPROM.put(0, data);
+    EEPROM.commit();
   }
 }
 
@@ -308,10 +313,12 @@ void showSchedule()
 {
   for (uint8_t g = 0; g < 4; ++g)
   {
+
     for (uint8_t i = 0; i < 3; ++i)
     {
+      Serial.print(data.interval[g][i]);
       gTimeInfo = *localtime(&data.nextSchedule[g][i]);
-      Serial.printf("%04d/%02d/%02d %02d:%02d:%02d   ", gTimeInfo.tm_year + 1900, gTimeInfo.tm_mon + 1, gTimeInfo.tm_mday, gTimeInfo.tm_hour, gTimeInfo.tm_min, gTimeInfo.tm_sec);
+      Serial.printf(" %04d/%02d/%02d %02d:%02d:%02d  ", gTimeInfo.tm_year + 1900, gTimeInfo.tm_mon + 1, gTimeInfo.tm_mday, gTimeInfo.tm_hour, gTimeInfo.tm_min, gTimeInfo.tm_sec);
     }
 
     Serial.println("");

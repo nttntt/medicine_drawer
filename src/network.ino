@@ -70,7 +70,6 @@ void httpSendResponse(void)
 /* HTTP リクエスト処理 */
 void handleHtml(void)
 {
-
   // 「/?button=○」のパラメータが指定されているかどうかを確認
   if (server.hasArg("button"))
   {
@@ -83,12 +82,17 @@ void handleHtml(void)
         data.minutes[i] = server.arg("minutes" + String(i)).toInt();
       }
       gGroup = 0;
+      getLocalTime(&gTimeInfo);
+      // 今日の0:00の時間をtime_tで計算
+      time_t midnightTime = gCurrentTime - gTimeInfo.tm_hour * 3600 - gTimeInfo.tm_min * 60 - gTimeInfo.tm_sec;
+
       for (uint8_t g = 0; g < 4; ++g)
       {
         uint8_t groupExist = 0;
         for (uint8_t i = 0; i < 3; ++i)
         {
           data.interval[g][i] = server.arg(String(g) + String(i)).toInt();
+          data.nextSchedule[g][i] = midnightTime + data.hour[i] * 3600 + data.minutes[i] * 60;
           if (data.interval[g][i]) // インターバルが0以外の時
           {
             groupExist++;
@@ -100,15 +104,15 @@ void handleHtml(void)
         }
       }
     }
+    // データ保存
+    EEPROM.begin(256);
+    EEPROM.put(0, data);
+    EEPROM.commit();
   }
 
-  // データ保存
-  EEPROM.begin(256);
-  EEPROM.put(0, data);
-  EEPROM.commit();
-  Serial.println("HTTP");
   // ページ更新
   httpSendResponse();
+  showSchedule();
 }
 
 // 存在しないアドレスが指定された時の処理
@@ -127,7 +131,6 @@ void connectToWifi()
     delay(500);
     Serial.print(".");
   }
-  Serial.println("");
   // モニターにローカル IPアドレスを表示する
   Serial.println("WiFi connected.");
   Serial.print("  *IP address: ");
@@ -143,7 +146,9 @@ void startMDNS()
     Serial.print(".");
     delay(100);
   }
-  Serial.println("");
+  Serial.print("  mDNS NAME:");
+  Serial.print(DEVICE_NAME);
+  Serial.println(".local");
 }
 
 void ajustTime()
