@@ -292,7 +292,7 @@ void checkSchedule()
     {
       if ((data.interval[g][i]) && (data.nextSchedule[g][i] <= gCurrentTime)) // インターバルが0以外で予約時間を超えた時
       {
-        gNoticeFlag = gNoticeFlag | (uint8_t)pow(2, g);
+        gNoticeFlag = gNoticeFlag | (uint8_t)(1 << g);
         gScheduledTime = gCurrentTime;
         data.nextSchedule[g][i] = midnightTime + data.hour[i] * 3600 + data.minutes[i] * 60 + data.interval[g][i] * 24 * 3600;
         isChanged = 1;
