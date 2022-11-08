@@ -29,7 +29,7 @@ void checkAlart(void);
 #define WIFI_SSID "0856g"
 #define WIFI_PASSWORD "nttnttntt"
 // Multicast DNS名
-#define DEVICE_NAME "medicine_drawer"
+#define DEVICE_NAME "medicine_drawer" // 16バイト以内
 // 時間取得
 #define JST 9 * 3600L
 #define NTPServer1 "192.168.1.10"
@@ -60,17 +60,19 @@ uint8_t gDrawerIsChanged = 0; // 引き出しの開け閉めフラグ
 uint8_t gDrawerStatus = 0;    // 引き出しの状態
 uint8_t gNoticeFlag = 0;      // 通知フラグ
 uint8_t gAlartFlag = 0;       // 飲み忘れフラグ
+uint8_t gDayOfClinic = 0;     // 通院日
 time_t gDrawerMovedTime;      // 最後に動かした時間　閉め忘れ対策
 time_t gScheduledTime;        // 直近の投薬時間　飲み忘れ対策
 time_t gCurrentTime;          // 現在の時刻
 struct tm gTimeInfo;          // 時刻を格納するオブジェクト
 
-struct _EEPROM_DATA // もしtime_tが64ビットなら130バイトなのでEEPROMの確保はそれ以上で
+struct _EEPROM_DATA // time_tは現在おそらく32ビットだがもし将来64ビットになったなら138バイトに増えるのでEEPROMの確保はそれ以上で
 {
   uint8_t hour[3];
   uint8_t minutes[3];
   uint8_t interval[4][3];
   time_t nextSchedule[4][3];
+  time_t dayOfClinic;
   char check[16];
 };
 struct _EEPROM_DATA data;
@@ -127,14 +129,14 @@ void initializeSchedule()
     {
       data.hour[i] = 0;
       data.minutes[i] = 0;
-    }
-    for (uint8_t g = 0; g < 4; ++g)
-    {
-      for (uint8_t i = 0; i < 3; ++i)
+
+      for (uint8_t g = 0; g < 4; ++g)
       {
+        data.interval[g][i] = 0;
         data.interval[g][i] = 0;
       }
     }
+    data.dayOfClinic = 0;
     strncpy(data.check, DEVICE_NAME, 16); // データ保存の証にデバイス名を登録
   }
 
@@ -175,7 +177,7 @@ void initializeSchedule()
   EEPROM.put(0, data);
   EEPROM.commit();
   showSchedule();
-  /*/ /////////////////////////////////////////////
+  /*/ //test data///////////////////////////////////////////
   data.nextSchedule[0][0] = gCurrentTime + 3;
   data.nextSchedule[1][0] = gCurrentTime + 10;
   data.nextSchedule[2][0] = gCurrentTime + 28;
@@ -211,6 +213,14 @@ void displayNotice()
         leds[currentLed] = blend(groupColor[g + 1], CRGB::Black, beatsin8(30, 0, 255));
       }
     }
+  }
+  if (gDayOfClinic)
+  {
+    for (uint8_t i = 0; i < NUM_LEDS; i = i + 4)
+    {
+      leds[i] = ColorFromPalette(RainbowColors_p, i * 8 + gHue, 255);
+    }
+    gHue++;
   }
 }
 
@@ -300,6 +310,15 @@ void checkSchedule()
     }
   }
 
+  if (midnightTime == data.dayOfClinic)
+  {
+    gDayOfClinic = 1;
+  }
+  else
+  {
+    gDayOfClinic = 0;
+  }
+
   if (isChanged)
   {
     showSchedule();
@@ -323,5 +342,8 @@ void showSchedule()
 
     Serial.println("");
   }
+  gTimeInfo = *localtime(&data.dayOfClinic);
+  Serial.printf("通院日 %04d/%02d/%02d %02d:%02d:%02d  ", gTimeInfo.tm_year + 1900, gTimeInfo.tm_mon + 1, gTimeInfo.tm_mday, gTimeInfo.tm_hour, gTimeInfo.tm_min, gTimeInfo.tm_sec);
+
   Serial.println("");
 }

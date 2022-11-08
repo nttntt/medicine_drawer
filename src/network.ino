@@ -36,6 +36,7 @@ const String strHtmlBody = R"rawliteral(
     <tr><th>グループD</th>
       <td><input type="text" name="30" value="%30%" size="3"></td><td><input type="text" name="31" value="%31%" size="3"></td><td><input type="text" name="32" value="%32%" size="3"></td></tr>
     </table>
+    通院日：    <input type="text" name="year" value="%year%" size="6"><input type="text" name="month" value="%month%" size="3"><input type="text" name="day" value="%day%" size="3">
     <input type="submit" name="button" value="send">
     </form>
   </body></html>
@@ -63,6 +64,14 @@ void httpSendResponse(void)
       strHtml.replace("%" + String(j) + String(i) + "%", numStr);
     }
   }
+  gTimeInfo = *localtime(&data.dayOfClinic);
+  sprintf(numStr, "%d", gTimeInfo.tm_year + 1900);
+  strHtml.replace("%year%", numStr);
+  sprintf(numStr, "%d", gTimeInfo.tm_mon + 1);
+  strHtml.replace("%month%", numStr);
+  sprintf(numStr, "%d", gTimeInfo.tm_mday);
+  strHtml.replace("%day%", numStr);
+
   // HTMLを出力する
   server.send(200, "text/html", strHtml);
 }
@@ -103,6 +112,14 @@ void handleHtml(void)
           gGroup++;
         }
       }
+
+      gTimeInfo.tm_year = server.arg("year").toInt() - 1900;
+      gTimeInfo.tm_mon = server.arg("month").toInt() - 1;
+      gTimeInfo.tm_mday = server.arg("day").toInt();
+      gTimeInfo.tm_hour = 0;
+      gTimeInfo.tm_min = 0;
+      gTimeInfo.tm_sec = 0;
+      data.dayOfClinic = mktime(&gTimeInfo);
     }
     // データ保存
     EEPROM.begin(256);
