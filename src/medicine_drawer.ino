@@ -66,7 +66,7 @@ time_t gScheduledTime;        // 直近の投薬時間　飲み忘れ対策
 time_t gCurrentTime;          // 現在の時刻
 struct tm gTimeInfo;          // 時刻を格納するオブジェクト
 
-struct _EEPROM_DATA // time_tは現在おそらく32ビットだがもし将来64ビットになったなら138バイトに増えるのでEEPROMの確保はそれ以上で
+struct _EEPROM_DATA // time_tが64ビットだった場合EEPROMの使用料は138バイトなので確保はそれ以上で
 {
   uint8_t hour[3];
   uint8_t minutes[3];

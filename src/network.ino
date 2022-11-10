@@ -94,6 +94,7 @@ void handleHtml(void)
       getLocalTime(&gTimeInfo);
       // 今日の0:00の時間をtime_tで計算
       time_t midnightTime = gCurrentTime - gTimeInfo.tm_hour * 3600 - gTimeInfo.tm_min * 60 - gTimeInfo.tm_sec;
+      time_t tmpSchedule;
 
       for (uint8_t g = 0; g < 4; ++g)
       {
@@ -105,6 +106,10 @@ void handleHtml(void)
           if (data.interval[g][i]) // インターバルが0以外の時
           {
             groupExist++;
+            if (data.nextSchedule[g][i] <= gCurrentTime) // 現在時刻より服薬予定時間が過去なら24時間後にする
+            {
+              data.nextSchedule[g][i] += 24 * 3600;
+            }
           }
         }
         if (groupExist)
@@ -120,11 +125,12 @@ void handleHtml(void)
       gTimeInfo.tm_min = 0;
       gTimeInfo.tm_sec = 0;
       data.dayOfClinic = mktime(&gTimeInfo);
+
+      // データ保存
+      EEPROM.begin(256);
+      EEPROM.put(0, data);
+      EEPROM.commit();
     }
-    // データ保存
-    EEPROM.begin(256);
-    EEPROM.put(0, data);
-    EEPROM.commit();
   }
 
   // ページ更新
